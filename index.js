@@ -1,42 +1,45 @@
-// index.js
-require('dotenv').config(); // load .env for local dev
+// backend/index.js
+require('dotenv').config(); // load .env first
+
 const express = require('express');
 const cors = require('cors');
-const db = require('./db');
+const apiRouter = require('./routes/index'); // your routes folder
+const db = require('./db'); // your DB helper (must export testConnection())
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// allow frontend access (replace with your frontend URL in production)
-const FRONTEND_URL = process.env.FRONTEND_URL || '*';
-app.use(cors({ origin: FRONTEND_URL }));
+// --- CORS: allow local dev & your Vercel frontend
+app.use(cors({
+  origin: [
+    'http://localhost:5173',                  // Vite dev server (change if different)
+    'https://nilakkal-parking.vercel.app'    // your Vercel production domain
+  ],
+  credentials: true
+}));
+
 app.use(express.json());
 
-// mount your routes if they exist (adjust paths)
-try {
-  const apiRouter = require('./routes/index'); // make sure routes/index.js exists
-  if (apiRouter) app.use('/api', apiRouter);
-} catch (err) {
-  // if you don't have routes/index.js then mount individual files:
-  // const zones = require('./routes/zones'); app.use('/api/zones', zones);
-  console.warn('No central routes/index.js found — ensure routes are mounted.', err.message);
-}
+// health endpoint
+app.get('/', (req, res) => res.send('Backend OK'));
 
+// mount API router under /api (so routes are /api/zones etc.)
+if (apiRouter) app.use('/api', apiRouter);
+
+// startup: test DB connection first (non-blocking safe startup)
 (async () => {
-  const ok = await db.testConnection();
-  if (!ok) {
-    console.error('DB connection failed — check env variables or Railway credentials.');
-    // Optionally exit here if you want the process to stop:
-    // process.exit(1);
-  } else {
-    console.log('✅ DB OK');
-    // If you want to apply schema on first run:
-    // await db.applySchemaIfExists();
+  try {
+    const ok = await db.testConnection(); // make sure your db.js exports this
+    if (ok) {
+      console.log('✅ MySQL connected OK');
+    } else {
+      console.error('❌ MySQL connection failed: db.testConnection() returned false');
+    }
+  } catch (err) {
+    console.error('❌ Railway MySQL connection failed:', err && err.message || err);
   }
 
-  app.get('/', (req, res) => res.send('Backend OK'));
-
   app.listen(PORT, () => {
-    console.log(`🚀 Server live at http://localhost:${PORT}`);
+    console.log(`Backend running at http://localhost:${PORT}`);
   });
 })();
